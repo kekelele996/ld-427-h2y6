@@ -21,7 +21,11 @@ type ExpenseRecord struct {
 	ApplicantID     uint                    `gorm:"not null" json:"applicant_id"`
 	ApprovedByID    *uint                   `json:"approved_by_id"`
 	ApprovalComment string                  `gorm:"size:512" json:"approval_comment"`
-	PaymentDate     *time.Time              `json:"payment_date"`
-	CreatedAt       time.Time               `json:"created_at"`
-	UpdatedAt       time.Time               `json:"updated_at"`
+	// LastRejectedAmount / LastRejectedComment 记录上一次被驳回时的金额与驳回理由，
+	// 供申请人修改后重新提交时审批人对照；未被驳回过时为 null/空。
+	LastRejectedAmount  *float64   `json:"last_rejected_amount"`
+	LastRejectedComment string     `gorm:"size:512" json:"last_rejected_comment"`
+	PaymentDate         *time.Time `json:"payment_date"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }

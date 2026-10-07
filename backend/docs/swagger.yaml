@@ -254,6 +254,33 @@ definitions:
         minimum: 0
         type: number
     type: object
+  dto.UpdateExpenseRequest:
+    properties:
+      amount:
+        type: number
+      attachment_url:
+        maxLength: 512
+        type: string
+      budget_item_id:
+        type: integer
+      description:
+        maxLength: 512
+        type: string
+      expense_date:
+        type: string
+      invoice_no:
+        maxLength: 128
+        type: string
+      payment_method:
+        $ref: '#/definitions/constants.PaymentMethod'
+      supplier_id:
+        type: integer
+    required:
+    - amount
+    - budget_item_id
+    - expense_date
+    - payment_method
+    type: object
   dto.UpdateItemRequest:
     properties:
       budget_amount:
@@ -769,6 +796,41 @@ paths:
       summary: 获取支出记录详情
       tags:
       - expenses
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 支出记录ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateExpenseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改支出记录（仅草稿/被驳回状态可改）
+      tags:
+      - expenses
   /expenses/{id}/approve:
     post:
       consumes:
@@ -882,7 +944,7 @@ paths:
             $ref: '#/definitions/response.Body'
       security:
       - BearerAuth: []
-      summary: 提交支出
+      summary: 提交支出（被驳回的记录重新提交会重新冻结预算）
       tags:
       - expenses
   /reconciliations:

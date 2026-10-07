@@ -50,6 +50,24 @@ paths:
       security: [{ BearerAuth: [] }]
       responses:
         "200": { description: ok }
+  /expenses/{id}:
+    put:
+      summary: 修改支出记录（仅草稿/被驳回状态可改，被驳回记录修改后可重新提交）
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: ok }
+        "409": { description: 当前状态不允许修改 }
+  /expenses/{id}/submit:
+    post:
+      summary: 提交支出（被驳回记录重新提交时按当前金额重新冻结预算，余额不足则整条退回）
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: ok }
+        "409": { description: 状态不允许提交或可用余额不足 }
   /suppliers:
     get:
       summary: 查询供应商列表

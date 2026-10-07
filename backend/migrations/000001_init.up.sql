@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS expense_records (
     applicant_id BIGINT NOT NULL,
     approved_by_id BIGINT,
     approval_comment VARCHAR(512) NOT NULL DEFAULT '',
+    last_rejected_amount DOUBLE PRECISION,
+    last_rejected_comment VARCHAR(512) NOT NULL DEFAULT '',
     payment_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

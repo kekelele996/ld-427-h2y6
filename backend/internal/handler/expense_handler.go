@@ -94,8 +94,38 @@ func (h *ExpenseHandler) Get(c *gin.Context) {
 	response.OK(c, record)
 }
 
+// Update 修改支出记录。
+// @Summary 修改支出记录（仅草稿/被驳回状态可改）
+// @Tags expenses
+// @Accept json
+// @Produce json
+// @Param id path int true "支出记录ID"
+// @Param request body dto.UpdateExpenseRequest true "修改请求"
+// @Success 200 {object} response.Body
+// @Failure 400 {object} response.Body
+// @Failure 409 {object} response.Body
+// @Security BearerAuth
+// @Router /expenses/{id} [put]
+func (h *ExpenseHandler) Update(c *gin.Context) {
+	actor, _ := middleware.CurrentActor(c)
+	id, ok := pathUint(c, "id")
+	if !ok {
+		return
+	}
+	var req dto.UpdateExpenseRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	record, err := h.service.Update(context.Background(), actor, id, req)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.OK(c, record)
+}
+
 // Submit 提交支出并冻结预算。
-// @Summary 提交支出
+// @Summary 提交支出（被驳回的记录重新提交会重新冻结预算）
 // @Tags expenses
 // @Produce json
 // @Param id path int true "支出记录ID"

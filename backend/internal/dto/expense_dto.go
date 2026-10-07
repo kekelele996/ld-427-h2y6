@@ -14,6 +14,18 @@ type CreateExpenseRequest struct {
 	AttachmentURL string                  `json:"attachment_url" binding:"omitempty,max=512"`
 }
 
+// UpdateExpenseRequest 修改支出记录请求，仅草稿（Draft）与被驳回（Rejected）状态可修改。
+type UpdateExpenseRequest struct {
+	BudgetItemID  uint                    `json:"budget_item_id" binding:"required"`
+	Amount        float64                 `json:"amount" binding:"required,gt=0"`
+	ExpenseDate   string                  `json:"expense_date" binding:"required,datetime=2006-01-02"`
+	PaymentMethod constants.PaymentMethod `json:"payment_method" binding:"required,payment_method"`
+	SupplierID    *uint                   `json:"supplier_id"`
+	InvoiceNo     string                  `json:"invoice_no" binding:"omitempty,max=128"`
+	Description   string                  `json:"description" binding:"omitempty,max=512"`
+	AttachmentURL string                  `json:"attachment_url" binding:"omitempty,max=512"`
+}
+
 // ApproveExpenseRequest 审批通过支出请求。
 type ApproveExpenseRequest struct {
 	ApprovalComment string `json:"approval_comment" binding:"omitempty,max=512"`

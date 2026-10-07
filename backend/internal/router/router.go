@@ -70,6 +70,7 @@ func New(deps Dependencies) *gin.Engine {
 		expenses.GET("", middleware.RBACMiddleware(middleware.PermissionView), deps.ExpenseHandler.List)
 		expenses.POST("", middleware.RBACMiddleware(middleware.PermissionExpenseCreate), deps.ExpenseHandler.Create)
 		expenses.GET("/:id", middleware.RBACMiddleware(middleware.PermissionView), deps.ExpenseHandler.Get)
+		expenses.PUT("/:id", middleware.RBACMiddleware(middleware.PermissionExpenseCreate), deps.ExpenseHandler.Update)
 		expenses.POST("/:id/submit", middleware.RBACMiddleware(middleware.PermissionExpenseCreate), deps.ExpenseHandler.Submit)
 		expenses.POST("/:id/approve", middleware.RBACMiddleware(middleware.PermissionExpenseApprove), deps.ExpenseHandler.Approve)
 		expenses.POST("/:id/reject", middleware.RBACMiddleware(middleware.PermissionExpenseApprove), deps.ExpenseHandler.Reject)

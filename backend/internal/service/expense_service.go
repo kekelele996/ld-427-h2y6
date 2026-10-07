@@ -89,7 +89,52 @@ func (s *ExpenseService) Get(ctx context.Context, id uint) (*model.ExpenseRecord
 	return record, nil
 }
 
-// Submit 提交支出并冻结预算。
+// Update 修改草稿或被驳回的支出记录。审批中、审批通过、已付款的记录不允许修改。
+// 修改本身不触碰预算表冻结金额，冻结在重新提交（Submit）时重新占住。
+func (s *ExpenseService) Update(ctx context.Context, actor model.Actor, id uint, req dto.UpdateExpenseRequest) (*model.ExpenseRecord, error) {
+	record, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get expense record %d: %w", id, err)
+	}
+	if record.Status != constants.ExpenseStatusDraft && record.Status != constants.ExpenseStatusRejected {
+		return nil, fmt.Errorf("update expense record %d: %w", id, ErrInvalidState)
+	}
+	if req.BudgetItemID != record.BudgetItemID {
+		if _, err := s.itemRepo.FindByID(ctx, req.BudgetItemID); err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return nil, ErrNotFound
+			}
+			return nil, fmt.Errorf("get budget item %d: %w", req.BudgetItemID, err)
+		}
+	}
+	expenseDate, err := time.Parse("2006-01-02", req.ExpenseDate)
+	if err != nil {
+		return nil, fmt.Errorf("parse expense date: %w", err)
+	}
+
+	record.BudgetItemID = req.BudgetItemID
+	record.Amount = req.Amount
+	record.ExpenseDate = expenseDate
+	record.PaymentMethod = req.PaymentMethod
+	record.SupplierID = req.SupplierID
+	record.InvoiceNo = req.InvoiceNo
+	record.Description = req.Description
+	record.AttachmentURL = req.AttachmentURL
+
+	if err := s.repo.Update(ctx, record); err != nil {
+		return nil, fmt.Errorf("update expense record %d: %w", id, err)
+	}
+	s.audit.Record(ctx, actor, "expense_update", "expense", id, fmt.Sprintf("budget_item_id=%d amount=%.2f status=%s", record.BudgetItemID, record.Amount, record.Status))
+	return record, nil
+}
+
+// Submit 提交支出并冻结预算。草稿（Draft）与被驳回（Rejected）的记录均可提交；
+// 被驳回记录重新提交时清掉上一轮审批痕迹（驳回时的金额与理由已快照在
+// LastRejectedAmount/LastRejectedComment 中供审批人对照），并按当前金额重新占住
+// 预算表冻结额度。金额超过预算表可用余额时本次提交整条退回，记录保持原状态。
 func (s *ExpenseService) Submit(ctx context.Context, actor model.Actor, id uint) (*model.ExpenseRecord, error) {
 	record, err := s.repo.FindByID(ctx, id)
 	if err != nil {
@@ -98,7 +143,7 @@ func (s *ExpenseService) Submit(ctx context.Context, actor model.Actor, id uint)
 		}
 		return nil, fmt.Errorf("get expense record %d: %w", id, err)
 	}
-	if record.Status != constants.ExpenseStatusDraft {
+	if record.Status != constants.ExpenseStatusDraft && record.Status != constants.ExpenseStatusRejected {
 		return nil, fmt.Errorf("submit expense record %d: %w", id, ErrInvalidState)
 	}
 	item, err := s.itemRepo.FindByID(ctx, record.BudgetItemID)
@@ -119,7 +164,12 @@ func (s *ExpenseService) Submit(ctx context.Context, actor model.Actor, id uint)
 		return nil, fmt.Errorf("submit expense record %d: %w", id, ErrInsufficientBalance)
 	}
 
+	resubmit := record.Status == constants.ExpenseStatusRejected
 	record.Status = constants.ExpenseStatusSubmitted
+	if resubmit {
+		record.ApprovedByID = nil
+		record.ApprovalComment = ""
+	}
 	budget.FrozenAmount += record.Amount
 	budget.AvailableAmount = CalculateAvailable(budget.TotalAmount, budget.SpentAmount, budget.FrozenAmount)
 
@@ -130,7 +180,11 @@ func (s *ExpenseService) Submit(ctx context.Context, actor model.Actor, id uint)
 		return nil, fmt.Errorf("freeze budget sheet %d: %w", budget.ID, err)
 	}
 	s.invalidateBudget(ctx, budget.ID)
-	s.audit.Record(ctx, actor, "expense_submit", "expense", id, fmt.Sprintf("amount=%.2f budget_sheet_id=%d", record.Amount, budget.ID))
+	action := "expense_submit"
+	if resubmit {
+		action = "expense_resubmit"
+	}
+	s.audit.Record(ctx, actor, action, "expense", id, fmt.Sprintf("amount=%.2f budget_sheet_id=%d", record.Amount, budget.ID))
 	return record, nil
 }
 
@@ -214,6 +268,10 @@ func (s *ExpenseService) Reject(ctx context.Context, actor model.Actor, id uint,
 	record.Status = constants.ExpenseStatusRejected
 	record.ApprovedByID = &actor.UserID
 	record.ApprovalComment = req.ApprovalComment
+	// 快照本次被驳回的金额与驳回理由，申请人改完重新提交后仍可供审批人对照。
+	rejectedAmount := record.Amount
+	record.LastRejectedAmount = &rejectedAmount
+	record.LastRejectedComment = req.ApprovalComment
 	budget.FrozenAmount -= record.Amount
 	budget.AvailableAmount = CalculateAvailable(budget.TotalAmount, budget.SpentAmount, budget.FrozenAmount)
 

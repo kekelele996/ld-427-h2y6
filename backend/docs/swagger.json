@@ -706,6 +706,61 @@
                         }
                     }
                 }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "expenses"
+                ],
+                "summary": "修改支出记录（仅草稿/被驳回状态可改）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "支出记录ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "修改请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateExpenseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
             }
         },
         "/expenses/{id}/approve": {
@@ -868,7 +923,7 @@
                 "tags": [
                     "expenses"
                 ],
-                "summary": "提交支出",
+                "summary": "提交支出（被驳回的记录重新提交会重新冻结预算）",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1768,6 +1823,44 @@
                 "total_amount": {
                     "type": "number",
                     "minimum": 0
+                }
+            }
+        },
+        "dto.UpdateExpenseRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "budget_item_id",
+                "expense_date",
+                "payment_method"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "attachment_url": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "budget_item_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "expense_date": {
+                    "type": "string"
+                },
+                "invoice_no": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "payment_method": {
+                    "$ref": "#/definitions/constants.PaymentMethod"
+                },
+                "supplier_id": {
+                    "type": "integer"
                 }
             }
         },
