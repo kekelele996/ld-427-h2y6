@@ -117,6 +117,59 @@ func (h *ExpenseHandler) Submit(c *gin.Context) {
 	response.OK(c, record)
 }
 
+// UpdateRejected 修改被驳回的支出（预算项、金额、供应商、发票号、说明）。
+// @Summary 修改被驳回的支出
+// @Tags expenses
+// @Accept json
+// @Produce json
+// @Param id path int true "支出记录ID"
+// @Param request body dto.UpdateRejectedExpenseRequest true "修改请求"
+// @Success 200 {object} response.Body
+// @Failure 400 {object} response.Body
+// @Failure 409 {object} response.Body
+// @Security BearerAuth
+// @Router /expenses/{id} [put]
+func (h *ExpenseHandler) UpdateRejected(c *gin.Context) {
+	actor, _ := middleware.CurrentActor(c)
+	id, ok := pathUint(c, "id")
+	if !ok {
+		return
+	}
+	var req dto.UpdateRejectedExpenseRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	record, err := h.service.UpdateRejected(context.Background(), actor, id, req)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.OK(c, record)
+}
+
+// Resubmit 重新提交被驳回的支出并重新冻结预算额度。
+// @Summary 重新提交被驳回的支出
+// @Tags expenses
+// @Produce json
+// @Param id path int true "支出记录ID"
+// @Success 200 {object} response.Body
+// @Failure 409 {object} response.Body
+// @Security BearerAuth
+// @Router /expenses/{id}/resubmit [post]
+func (h *ExpenseHandler) Resubmit(c *gin.Context) {
+	actor, _ := middleware.CurrentActor(c)
+	id, ok := pathUint(c, "id")
+	if !ok {
+		return
+	}
+	record, err := h.service.Resubmit(context.Background(), actor, id)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.OK(c, record)
+}
+
 // Approve 审批通过支出。
 // @Summary 审批通过支出
 // @Tags expenses

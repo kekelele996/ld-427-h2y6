@@ -706,6 +706,61 @@
                         }
                     }
                 }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "expenses"
+                ],
+                "summary": "修改被驳回的支出",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "支出记录ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "修改请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateRejectedExpenseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
             }
         },
         "/expenses/{id}/approve": {
@@ -848,6 +903,45 @@
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/expenses/{id}/resubmit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "expenses"
+                ],
+                "summary": "重新提交被驳回的支出",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "支出记录ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -1803,6 +1897,32 @@
                 },
                 "payable_amount": {
                     "type": "number"
+                }
+            }
+        },
+        "dto.UpdateRejectedExpenseRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "budget_item_id"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "budget_item_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "invoice_no": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "supplier_id": {
+                    "type": "integer"
                 }
             }
         },

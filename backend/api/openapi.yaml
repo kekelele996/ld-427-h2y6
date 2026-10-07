@@ -50,6 +50,33 @@ paths:
       security: [{ BearerAuth: [] }]
       responses:
         "200": { description: ok }
+  /expenses/{id}:
+    put:
+      summary: 修改被驳回的支出（预算项、金额、供应商、发票号、说明）
+      description: 仅审批状态为 Rejected 的支出可修改，修改后仍为 Rejected，需再调用 resubmit 重新提交。
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: ok }
+        "404": { description: 支出记录或预算项不存在 }
+        "409": { description: 当前状态不允许修改 }
+  /expenses/{id}/resubmit:
+    post:
+      summary: 重新提交被驳回的支出并重新冻结预算额度
+      description: 余额不足时返回 409，记录维持 Rejected，修改内容保留，本次提交整条退回。
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: ok }
+        "409": { description: 当前状态不允许重提，或预算表可用余额不足 }
   /suppliers:
     get:
       summary: 查询供应商列表

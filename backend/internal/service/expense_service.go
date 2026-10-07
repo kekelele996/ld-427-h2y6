@@ -101,36 +101,79 @@ func (s *ExpenseService) Submit(ctx context.Context, actor model.Actor, id uint)
 	if record.Status != constants.ExpenseStatusDraft {
 		return nil, fmt.Errorf("submit expense record %d: %w", id, ErrInvalidState)
 	}
-	item, err := s.itemRepo.FindByID(ctx, record.BudgetItemID)
+	_, budget, err := s.loadExpenseBudget(ctx, record)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("get budget item %d: %w", record.BudgetItemID, err)
-	}
-	budget, err := s.budgetRepo.FindByID(ctx, item.BudgetSheetID)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("get budget sheet %d: %w", item.BudgetSheetID, err)
-	}
-	if CalculateAvailable(budget.TotalAmount, budget.SpentAmount, budget.FrozenAmount) < record.Amount {
-		return nil, fmt.Errorf("submit expense record %d: %w", id, ErrInsufficientBalance)
-	}
-
-	record.Status = constants.ExpenseStatusSubmitted
-	budget.FrozenAmount += record.Amount
-	budget.AvailableAmount = CalculateAvailable(budget.TotalAmount, budget.SpentAmount, budget.FrozenAmount)
-
-	if err := s.repo.Update(ctx, record); err != nil {
 		return nil, fmt.Errorf("submit expense record %d: %w", id, err)
 	}
-	if err := s.budgetRepo.Update(ctx, budget); err != nil {
-		return nil, fmt.Errorf("freeze budget sheet %d: %w", budget.ID, err)
+	if err := s.applySubmitFreeze(ctx, record, budget); err != nil {
+		return nil, fmt.Errorf("submit expense record %d: %w", id, err)
 	}
-	s.invalidateBudget(ctx, budget.ID)
 	s.audit.Record(ctx, actor, "expense_submit", "expense", id, fmt.Sprintf("amount=%.2f budget_sheet_id=%d", record.Amount, budget.ID))
+	return record, nil
+}
+
+// UpdateRejected 修改被驳回的支出。仅 Rejected 状态可改，可改预算项、金额、
+// 供应商、发票号、说明；记录仍保持 Rejected 状态，驳回时的金额与理由快照保留，
+// 待重新提交时供审批人对照。
+func (s *ExpenseService) UpdateRejected(ctx context.Context, actor model.Actor, id uint, req dto.UpdateRejectedExpenseRequest) (*model.ExpenseRecord, error) {
+	record, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get expense record %d: %w", id, err)
+	}
+	if record.Status != constants.ExpenseStatusRejected {
+		return nil, fmt.Errorf("update rejected expense record %d: %w", id, ErrInvalidState)
+	}
+	item, err := s.itemRepo.FindByID(ctx, req.BudgetItemID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get budget item %d: %w", req.BudgetItemID, err)
+	}
+
+	oldItemID := record.BudgetItemID
+	oldAmount := record.Amount
+	record.BudgetItemID = item.ID
+	record.Amount = req.Amount
+	record.SupplierID = req.SupplierID
+	record.InvoiceNo = req.InvoiceNo
+	record.Description = req.Description
+
+	if err := s.repo.Update(ctx, record); err != nil {
+		return nil, fmt.Errorf("update rejected expense record %d: %w", id, err)
+	}
+	s.audit.Record(ctx, actor, "expense_update_rejected", "expense", id,
+		fmt.Sprintf("budget_item_id=%d->%d amount=%.2f->%.2f revision=%d", oldItemID, item.ID, oldAmount, req.Amount, record.RevisionCount))
+	return record, nil
+}
+
+// Resubmit 重新提交被驳回且已修改的支出，并按当前金额重新冻结预算表额度。
+// 若金额超过预算表剩余可用余额，返回 ErrInsufficientBalance，记录维持 Rejected，
+// 本次修改整条退回给申请人继续调整。
+func (s *ExpenseService) Resubmit(ctx context.Context, actor model.Actor, id uint) (*model.ExpenseRecord, error) {
+	record, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get expense record %d: %w", id, err)
+	}
+	if record.Status != constants.ExpenseStatusRejected {
+		return nil, fmt.Errorf("resubmit expense record %d: %w", id, ErrInvalidState)
+	}
+	_, budget, err := s.loadExpenseBudget(ctx, record)
+	if err != nil {
+		return nil, fmt.Errorf("resubmit expense record %d: %w", id, err)
+	}
+	record.RevisionCount++
+	if err := s.applySubmitFreeze(ctx, record, budget); err != nil {
+		return nil, fmt.Errorf("resubmit expense record %d: %w", id, err)
+	}
+	s.audit.Record(ctx, actor, "expense_resubmit", "expense", id,
+		fmt.Sprintf("amount=%.2f budget_sheet_id=%d revision=%d", record.Amount, budget.ID, record.RevisionCount))
 	return record, nil
 }
 
@@ -146,19 +189,9 @@ func (s *ExpenseService) Approve(ctx context.Context, actor model.Actor, id uint
 	if record.Status != constants.ExpenseStatusSubmitted {
 		return nil, fmt.Errorf("approve expense record %d: %w", id, ErrInvalidState)
 	}
-	item, err := s.itemRepo.FindByID(ctx, record.BudgetItemID)
+	item, budget, err := s.loadExpenseBudget(ctx, record)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("get budget item %d: %w", record.BudgetItemID, err)
-	}
-	budget, err := s.budgetRepo.FindByID(ctx, item.BudgetSheetID)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("get budget sheet %d: %w", item.BudgetSheetID, err)
+		return nil, fmt.Errorf("approve expense record %d: %w", id, err)
 	}
 
 	record.Status = constants.ExpenseStatusApproved
@@ -196,24 +229,19 @@ func (s *ExpenseService) Reject(ctx context.Context, actor model.Actor, id uint,
 	if record.Status != constants.ExpenseStatusSubmitted {
 		return nil, fmt.Errorf("reject expense record %d: %w", id, ErrInvalidState)
 	}
-	item, err := s.itemRepo.FindByID(ctx, record.BudgetItemID)
+	_, budget, err := s.loadExpenseBudget(ctx, record)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("get budget item %d: %w", record.BudgetItemID, err)
-	}
-	budget, err := s.budgetRepo.FindByID(ctx, item.BudgetSheetID)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("get budget sheet %d: %w", item.BudgetSheetID, err)
+		return nil, fmt.Errorf("reject expense record %d: %w", id, err)
 	}
 
+	rejectedAmount := record.Amount
 	record.Status = constants.ExpenseStatusRejected
 	record.ApprovedByID = &actor.UserID
 	record.ApprovalComment = req.ApprovalComment
+	// 驳回时冻结额度已释放；把被驳回的金额与理由留在记录上，
+	// 申请人修改重提后审批人仍可对照原金额与驳回理由。
+	record.RejectedAmount = &rejectedAmount
+	record.RejectionComment = req.ApprovalComment
 	budget.FrozenAmount -= record.Amount
 	budget.AvailableAmount = CalculateAvailable(budget.TotalAmount, budget.SpentAmount, budget.FrozenAmount)
 
@@ -256,6 +284,45 @@ func (s *ExpenseService) Pay(ctx context.Context, actor model.Actor, id uint, re
 	}
 	s.audit.Record(ctx, actor, "expense_pay", "expense", id, fmt.Sprintf("amount=%.2f", record.Amount))
 	return record, nil
+}
+
+// loadExpenseBudget 加载支出所属预算项及其预算表。
+func (s *ExpenseService) loadExpenseBudget(ctx context.Context, record *model.ExpenseRecord) (*model.BudgetItem, *model.BudgetSheet, error) {
+	item, err := s.itemRepo.FindByID(ctx, record.BudgetItemID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, nil, ErrNotFound
+		}
+		return nil, nil, fmt.Errorf("get budget item %d: %w", record.BudgetItemID, err)
+	}
+	budget, err := s.budgetRepo.FindByID(ctx, item.BudgetSheetID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, nil, ErrNotFound
+		}
+		return nil, nil, fmt.Errorf("get budget sheet %d: %w", item.BudgetSheetID, err)
+	}
+	return item, budget, nil
+}
+
+// applySubmitFreeze 校验预算表剩余可用余额并冻结本次申请金额。
+// 余额不足时返回 ErrInsufficientBalance，且不写入任何变更。
+func (s *ExpenseService) applySubmitFreeze(ctx context.Context, record *model.ExpenseRecord, budget *model.BudgetSheet) error {
+	if CalculateAvailable(budget.TotalAmount, budget.SpentAmount, budget.FrozenAmount) < record.Amount {
+		return ErrInsufficientBalance
+	}
+	record.Status = constants.ExpenseStatusSubmitted
+	budget.FrozenAmount += record.Amount
+	budget.AvailableAmount = CalculateAvailable(budget.TotalAmount, budget.SpentAmount, budget.FrozenAmount)
+
+	if err := s.repo.Update(ctx, record); err != nil {
+		return fmt.Errorf("update expense record %d: %w", record.ID, err)
+	}
+	if err := s.budgetRepo.Update(ctx, budget); err != nil {
+		return fmt.Errorf("freeze budget sheet %d: %w", budget.ID, err)
+	}
+	s.invalidateBudget(ctx, budget.ID)
+	return nil
 }
 
 func (s *ExpenseService) invalidateBudget(ctx context.Context, budgetSheetID uint) {

@@ -22,6 +22,12 @@ type ExpenseRecord struct {
 	ApprovedByID    *uint                   `json:"approved_by_id"`
 	ApprovalComment string                  `gorm:"size:512" json:"approval_comment"`
 	PaymentDate     *time.Time              `json:"payment_date"`
-	CreatedAt       time.Time               `json:"created_at"`
-	UpdatedAt       time.Time               `json:"updated_at"`
+	// RejectedAmount 最近一次被驳回时的金额快照，供修改重提后审批人对照原金额。
+	RejectedAmount *float64 `json:"rejected_amount"`
+	// RejectionComment 最近一次驳回理由快照，修改重提后仍保留在记录上供审批人对照。
+	RejectionComment string `gorm:"size:512" json:"rejection_comment"`
+	// RevisionCount 被驳回后修改重提的次数，首次提交为 0。
+	RevisionCount int       `gorm:"not null;default:0" json:"revision_count"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }

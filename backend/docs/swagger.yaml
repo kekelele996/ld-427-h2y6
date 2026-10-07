@@ -278,6 +278,24 @@ definitions:
       payable_amount:
         type: number
     type: object
+  dto.UpdateRejectedExpenseRequest:
+    properties:
+      amount:
+        type: number
+      budget_item_id:
+        type: integer
+      description:
+        maxLength: 512
+        type: string
+      invoice_no:
+        maxLength: 128
+        type: string
+      supplier_id:
+        type: integer
+    required:
+    - amount
+    - budget_item_id
+    type: object
   dto.UpdateSupplierRequest:
     properties:
       address:
@@ -769,6 +787,41 @@ paths:
       summary: 获取支出记录详情
       tags:
       - expenses
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 支出记录ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateRejectedExpenseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改被驳回的支出
+      tags:
+      - expenses
   /expenses/{id}/approve:
     post:
       consumes:
@@ -859,6 +912,30 @@ paths:
       security:
       - BearerAuth: []
       summary: 驳回支出
+      tags:
+      - expenses
+  /expenses/{id}/resubmit:
+    post:
+      parameters:
+      - description: 支出记录ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 重新提交被驳回的支出
       tags:
       - expenses
   /expenses/{id}/submit:
